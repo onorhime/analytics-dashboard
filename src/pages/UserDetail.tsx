@@ -50,18 +50,44 @@ const UserDetail = () => {
   // Prepare referrer data
   const prepareReferrerData = (visits: PageVisit[]) => {
     const referrerCounter: Record<string, number> = {};
+    const totalVisits = visits.length;
     
     visits.forEach(visit => {
       const referrer = visit.referrer || 'Direct';
       referrerCounter[referrer] = (referrerCounter[referrer] || 0) + 1;
     });
     
-    return Object.entries(referrerCounter)
-      .map(([source, count]) => ({ source, count }))
+    // Sort data by count in descending order
+    let sortedReferrers = Object.entries(referrerCounter)
+      .map(([source, count]) => ({ 
+        source, 
+        count, 
+        percentage: Math.round((count / totalVisits) * 100)
+      }))
       .sort((a, b) => b.count - a.count);
+      
+    // Group small segments (less than 5% or if there are too many segments)
+    if (sortedReferrers.length > 6) {
+      const mainReferrers = sortedReferrers.slice(0, 5);
+      const otherReferrers = sortedReferrers.slice(5);
+      
+      const otherCount = otherReferrers.reduce((sum, item) => sum + item.count, 0);
+      const otherPercentage = Math.round((otherCount / totalVisits) * 100);
+      
+      if (otherCount > 0) {
+        sortedReferrers = [
+          ...mainReferrers, 
+          { source: 'Other Sources', count: otherCount, percentage: otherPercentage }
+        ];
+      } else {
+        sortedReferrers = mainReferrers;
+      }
+    }
+    
+    return sortedReferrers;
   };
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#A05195', '#D45087'];
 
   if (isLoading) {
     return (
@@ -153,9 +179,10 @@ const UserDetail = () => {
         {/* Pages Visited Chart */}
         <div className="chart-container half-width">
           <h2>Pages Visited</h2>
-          <ResponsiveContainer width="100%" height={300}>
+          {/* Dynamically adjust height based on number of pages */}
+          <ResponsiveContainer width="100%" height={Math.max(300, pageViewData.length * 40)}>
             <BarChart
-              data={pageViewData.slice(0, 5)}
+              data={pageViewData}
               margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
               layout="vertical"
             >
@@ -164,8 +191,12 @@ const UserDetail = () => {
               <YAxis 
                 dataKey="page" 
                 type="category" 
-                width={150}
-                tick={{ fontSize: 12 }}
+                width={180}
+                tick={{ fontSize: 11 }}
+                tickFormatter={(value) => {
+                  // Truncate long page URLs for better display
+                  return value.length > 25 ? `${value.substring(0, 22)}...` : value;
+                }}
               />
               <Tooltip />
               <Legend />
@@ -177,25 +208,72 @@ const UserDetail = () => {
         {/* Referrers Chart */}
         <div className="chart-container half-width">
           <h2>Traffic Sources</h2>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={380}>
             <PieChart>
               <Pie
                 data={referrerData}
                 cx="50%"
-                cy="50%"
-                labelLine={false}
-                outerRadius={80}
+                cy="40%"
+                labelLine={true}
+                outerRadius={90}
+                innerRadius={30}
+                paddingAngle={2}
                 fill="#8884d8"
                 dataKey="count"
                 nameKey="source"
-                label={({ source, percent }) => `${source}: ${(percent * 100).toFixed(0)}%`}
+                label={({ percentage }) => {
+                  // Check if percentage exists and is a number
+                  return percentage !== undefined && !isNaN(percentage) 
+                    ? `${percentage}%` 
+                    : '';
+                }}
               >
                 {referrerData.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={COLORS[index % COLORS.length]} 
+                    stroke="#FFFFFF"
+                    strokeWidth={2}
+                  />
                 ))}
               </Pie>
-              <Tooltip formatter={(value, _, props) => [`${value} visits`, props.payload.source]} />
-              <Legend />
+              <Tooltip 
+                formatter={(value, _, props) => {
+                  // Check if percentage exists and is a number before using it
+                  const percentage = props.payload.percentage;
+                  const percentString = percentage !== undefined && !isNaN(percentage) 
+                    ? `(${percentage}%)` 
+                    : '';
+                  return [
+                    `${value} visits ${percentString}`, 
+                    props.payload.source
+                  ];
+                }} 
+                contentStyle={{ 
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.15)'
+                }}
+              />
+              <Legend 
+                layout="horizontal"
+                align="center"
+                verticalAlign="bottom"
+                wrapperStyle={{
+                  paddingTop: '20px',
+                  fontSize: '13px',
+                  width: '100%'
+                }}
+                formatter={(_, entry) => {
+                  const { payload } = entry as any;
+                  // Check if percentage exists and is a number
+                  const percentage = payload.percentage;
+                  const percentString = percentage !== undefined && !isNaN(percentage) 
+                    ? `(${percentage}%)` 
+                    : '';
+                  return `${payload.source} ${percentString}`;
+                }}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -216,7 +294,18 @@ const UserDetail = () => {
               </tr>
             </thead>
             <tbody>
-              {userPageVisits.map((visit) => (
+              {userPageVisits
+                // Create a sorted copy with newest visits first
+                .slice()
+                .sort((a, b) => {
+                  const dateA = safeParseDate(a.visited_at);
+                  const dateB = safeParseDate(b.visited_at);
+                  if (dateA && dateB) {
+                    return dateB.getTime() - dateA.getTime();
+                  }
+                  return 0;
+                })
+                .map((visit) => (
                 <tr key={visit.id}>
                   <td>{visit.page_url}</td>
                   <td>{visit.page_title}</td>

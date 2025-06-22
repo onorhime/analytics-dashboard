@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../store';
 import { 
   fetchAllData, 
@@ -19,13 +19,61 @@ const Analytics = () => {
   const summary = useAppSelector(selectAnalyticsSummary);
   const isLoading = useAppSelector(selectIsLoading);
   const error = useAppSelector(selectError);
-  const recentVisits = useAppSelector(selectAllPageVisits).slice(0, 10);
+  // Get recent visits and sort by visited_at in descending order (newest first)
+  const recentVisits = useAppSelector(selectAllPageVisits)
+    .slice()
+    .sort((a, b) => {
+      const dateA = safeParseDate(a.visited_at);
+      const dateB = safeParseDate(b.visited_at);
+      if (dateA && dateB) {
+        return dateB.getTime() - dateA.getTime();
+      }
+      return 0;
+    })
+    .slice(0, 10); // Take only the first 10 after sorting
+
+  // Track initial load vs. refresh state
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  // Set up automatic refresh every 30 seconds
+  const [refreshInterval] = useState(30000); // 30 seconds in milliseconds
+  // State to show a subtle refresh indicator
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
+    // Fetch data immediately on component mount
     dispatch(fetchAllData());
-  }, [dispatch]);
+    
+    // Set up periodic refresh
+    const intervalId = setInterval(() => {
+      setIsRefreshing(true);
+      dispatch(fetchAllData());
+    }, refreshInterval);
+    
+    // Clean up interval on component unmount
+    return () => clearInterval(intervalId);
+  }, [dispatch, refreshInterval]);
 
-  if (isLoading) {
+  // Log the chart data when it changes to debug the date issue
+  // Update our states when data loads or refreshes
+  useEffect(() => {
+    if (summary?.visitsByDay?.length) {
+      console.log('Chart data:', summary.visitsByDay);
+      console.log('Latest date in chart:', summary.visitsByDay[summary.visitsByDay.length - 1].date);
+      
+      // Mark initial load as complete when we first get data
+      if (!initialLoadComplete) {
+        setInitialLoadComplete(true);
+      }
+      
+      // Reset refreshing state when new data arrives
+      if (isRefreshing) {
+        setIsRefreshing(false);
+      }
+    }
+  }, [summary?.visitsByDay, initialLoadComplete, isRefreshing]);
+
+  // Only show full loading screen on initial load
+  if (isLoading && !initialLoadComplete) {
     return (
       <div className="loading-container">
         <div className="loading-spinner"></div>
@@ -58,7 +106,10 @@ const Analytics = () => {
 
   return (
     <div className="analytics-page">
-      <h1>Analytics Dashboard</h1>
+      <div className="dashboard-header">
+        <h1>Analytics Dashboard</h1>
+        {isRefreshing && <div className="refresh-indicator">Refreshing data...</div>}
+      </div>
       
       {/* Summary Cards */}
       <div className="summary-cards">
@@ -87,7 +138,9 @@ const Analytics = () => {
           <ResponsiveContainer width="100%" height={300}>
             <BarChart
               data={summary.visitsByDay}
-              margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
+              barCategoryGap={2}
+              maxBarSize={30}
             >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -99,6 +152,13 @@ const Analytics = () => {
                     return date;
                   }
                 }}
+                angle={-45}
+                textAnchor="end"
+                height={60}
+                interval="preserveStartEnd"
+                padding={{ left: 0, right: 10 }}
+                minTickGap={10}
+                domain={['dataMin', 'dataMax']}
               />
               <YAxis />
               <Tooltip 
@@ -158,25 +218,64 @@ const Analytics = () => {
         {summary.referrerData && summary.referrerData.length > 0 ? (
           <div className="chart-container half-width">
             <h2>Top Referrers</h2>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={380}>
               <PieChart>
                 <Pie
                   data={summary.referrerData}
                   cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  outerRadius={80}
+                  cy="40%"
+                  labelLine={true}
+                  outerRadius={90}
+                  innerRadius={30}
+                  paddingAngle={2}
                   fill="#8884d8"
                   dataKey="visits"
                   nameKey="source"
-                  label={({ source, percent }) => `${source}: ${(percent * 100).toFixed(0)}%`}
+                  label={({ percent }) => {
+                    // Check if percent exists and is a number
+                    return percent !== undefined && !isNaN(percent) 
+                      ? `${(percent * 100).toFixed(0)}%` 
+                      : '';
+                  }}
                 >
                   {summary.referrerData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={COLORS[index % COLORS.length]} 
+                      stroke="#FFFFFF"
+                      strokeWidth={2}
+                    />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value, _, props) => [`${value} visits`, props.payload.source]} />
-                <Legend />
+                <Tooltip 
+                  formatter={(value, _, props) => {
+                    // Check if percent exists and is a number before using it
+                    const percent = props.payload.percent;
+                    const percentString = percent !== undefined && !isNaN(percent) 
+                      ? `(${(percent * 100).toFixed(0)}%)` 
+                      : '';
+                    return [
+                      `${value} visits ${percentString}`, 
+                      props.payload.source
+                    ];
+                  }}
+                  contentStyle={{ 
+                    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                    borderRadius: '4px',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.15)'
+                  }}
+                />
+                <Legend 
+                  layout="horizontal"
+                  align="center"
+                  verticalAlign="bottom"
+                  wrapperStyle={{
+                    paddingTop: '20px',
+                    fontSize: '13px',
+                    width: '100%'
+                  }}
+                  formatter={(value) => `${value}`}
+                />
               </PieChart>
             </ResponsiveContainer>
           </div>

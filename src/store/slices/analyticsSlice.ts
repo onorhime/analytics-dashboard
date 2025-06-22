@@ -45,14 +45,25 @@ const computeAnalyticsSummary = (pageVisits: PageVisit[]): AnalyticsSummary => {
     .slice(0, 5);
   
   // Calculate visits by day (last 30 days)
-  const today = new Date();
+  // Create a fresh date object with today's year, month, day and no time component
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  console.log('Today is:', format(today, 'yyyy-MM-dd')); // Log today's date for debugging
+  
   const dayVisits: Record<string, number> = {};
   
-  // Initialize all days with 0 visits
-  for (let i = 0; i < 30; i++) {
+  // Create a new array with the last 30 days INCLUDING today
+  const dateArray = [];
+  for (let i = 29; i >= 0; i--) {
     const date = subDays(today, i);
-    dayVisits[format(date, 'yyyy-MM-dd')] = 0;
+    const formattedDate = format(date, 'yyyy-MM-dd');
+    dayVisits[formattedDate] = 0;
+    dateArray.push(formattedDate);
   }
+  
+  // Log the first and last dates in our range for debugging
+  console.log('First date in range:', dateArray[0]);
+  console.log('Last date in range:', dateArray[dateArray.length-1]);
   
   // Count visits per day
   pageVisits.forEach(visit => {
@@ -69,10 +80,11 @@ const computeAnalyticsSummary = (pageVisits: PageVisit[]): AnalyticsSummary => {
     }
   });
   
-  // Format for chart data
-  const visitsByDay = Object.entries(dayVisits)
-    .map(([date, visits]) => ({ date, visits }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // Format data for chart display, ensuring we include all dates including today
+  let visitsByDay = dateArray.map(date => ({
+    date,
+    visits: dayVisits[date] || 0
+  }));
   
   // Calculate referrer data
   const referrerCounter: Record<string, number> = {};

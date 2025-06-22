@@ -9,7 +9,7 @@ const Layout = ({ children }: LayoutProps) => {
   return (
     <div className="dashboard-container">
       <header className="dashboard-header">
-        <div className="logo">Analytics Dashboard</div>
+        <div className="logo">Correct Toes Analytics</div>
         <nav className="main-nav">
           <NavLink 
             to="/" 
@@ -32,7 +32,7 @@ const Layout = ({ children }: LayoutProps) => {
       </main>
       
       <footer className="dashboard-footer">
-        <p>© {new Date().getFullYear()} Analytics Dashboard</p>
+        <p>© {new Date().getFullYear()} Correct Toes Analytics</p>
       </footer>
     </div>
   );

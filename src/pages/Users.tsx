@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../store';
 import { 
@@ -16,12 +16,21 @@ const Users = () => {
   const isLoading = useAppSelector(selectIsLoading);
   const error = useAppSelector(selectError);
 
+  // Set up automatic refresh every 30 seconds
+  const [refreshInterval] = useState(30000); // 30 seconds in milliseconds
+
   useEffect(() => {
-    // Only fetch if we don't already have data
-    if (users.length === 0) {
+    // Fetch data immediately on component mount
+    dispatch(fetchAllData());
+    
+    // Set up periodic refresh
+    const intervalId = setInterval(() => {
       dispatch(fetchAllData());
-    }
-  }, [dispatch, users.length]);
+    }, refreshInterval);
+    
+    // Clean up interval on component unmount
+    return () => clearInterval(intervalId);
+  }, [dispatch, refreshInterval]);
 
   if (isLoading) {
     return (
